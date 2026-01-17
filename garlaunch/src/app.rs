@@ -1,3 +1,4 @@
+use crate::frecency::FrecencyStore;
 use crate::modes::{Action, Item, Mode};
 use crate::search::FuzzyMatcher;
 use crate::ui::Popup;
@@ -79,17 +80,28 @@ impl App {
 
         let max_visible = 10;
 
+        // Load frecency store for this mode
+        let frecency = FrecencyStore::load(mode_name).unwrap_or_else(|e| {
+            tracing::warn!("Failed to load frecency cache: {}", e);
+            FrecencyStore::new(mode_name)
+        });
+
+        let mut matcher = FuzzyMatcher::new().with_frecency(frecency);
+
+        // Apply initial frecency sorting
+        let filtered_items = matcher.filter(&all_items, "");
+
         Ok(Self {
             popup,
             mode,
             input: String::new(),
             cursor: 0,
-            filtered_items: all_items.clone(),
+            filtered_items,
             all_items,
             selected: 0,
             scroll_offset: 0,
             max_visible,
-            matcher: FuzzyMatcher::new(),
+            matcher,
             result: None,
             should_quit: false,
         })
@@ -238,8 +250,16 @@ impl App {
 
     /// Select the current item
     fn select_current(&mut self) {
-        if let Some(item) = self.filtered_items.get(self.selected) {
-            if let Ok(action) = self.mode.activate(item) {
+        if let Some(item) = self.filtered_items.get(self.selected).cloned() {
+            // Record the selection for frecency
+            if let Some(frecency) = self.matcher.frecency_mut() {
+                frecency.record(&item.id);
+                if let Err(e) = frecency.save() {
+                    tracing::warn!("Failed to save frecency cache: {}", e);
+                }
+            }
+
+            if let Ok(action) = self.mode.activate(&item) {
                 match action {
                     Action::Close => {
                         self.should_quit = true;

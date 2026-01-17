@@ -1,5 +1,6 @@
 mod app;
 mod config;
+mod frecency;
 mod ipc;
 mod modes;
 mod search;

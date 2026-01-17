@@ -1,52 +1,99 @@
+use crate::frecency::FrecencyStore;
 use crate::modes::Item;
 use nucleo_matcher::pattern::{CaseMatching, Normalization, Pattern};
 use nucleo_matcher::{Config, Matcher, Utf32Str};
 
-/// Fuzzy matcher for filtering items
+/// Fuzzy matcher for filtering items with optional frecency integration
 pub struct FuzzyMatcher {
     matcher: Matcher,
+    frecency: Option<FrecencyStore>,
 }
 
 impl FuzzyMatcher {
     pub fn new() -> Self {
         Self {
             matcher: Matcher::new(Config::DEFAULT),
+            frecency: None,
         }
+    }
+
+    /// Attach a frecency store
+    pub fn with_frecency(mut self, store: FrecencyStore) -> Self {
+        self.frecency = Some(store);
+        self
+    }
+
+    /// Get mutable reference to frecency store (for recording selections)
+    pub fn frecency_mut(&mut self) -> Option<&mut FrecencyStore> {
+        self.frecency.as_mut()
     }
 
     /// Filter items based on a query string
     pub fn filter(&mut self, items: &[Item], query: &str) -> Vec<Item> {
         if query.is_empty() {
-            return items.to_vec();
+            // No query: sort by frecency (or original order if no frecency)
+            return self.sort_by_frecency(items);
         }
 
         let pattern = Pattern::parse(query, CaseMatching::Smart, Normalization::Smart);
 
-        let mut scored: Vec<(u32, &Item)> = items
+        let mut scored: Vec<(f64, &Item)> = items
             .iter()
             .filter_map(|item| {
                 let mut buf = Vec::new();
                 let haystack = Utf32Str::new(&item.name, &mut buf);
-                let score = pattern.score(haystack, &mut self.matcher)?;
+                let mut fuzzy_score = pattern.score(haystack, &mut self.matcher)? as f64;
 
                 // Also try matching against description
                 if let Some(desc) = &item.description {
                     let mut desc_buf = Vec::new();
                     let desc_haystack = Utf32Str::new(desc, &mut desc_buf);
                     if let Some(desc_score) = pattern.score(desc_haystack, &mut self.matcher) {
-                        // Use the better score
-                        return Some((score.max(desc_score), item));
+                        fuzzy_score = fuzzy_score.max(desc_score as f64);
                     }
                 }
 
-                Some((score, item))
+                // Add frecency boost (small factor so fuzzy dominates)
+                let frecency_boost = self.frecency_score(&item.id) * 0.1;
+                let combined = fuzzy_score + frecency_boost;
+
+                Some((combined, item))
             })
             .collect();
 
-        // Sort by score (descending)
-        scored.sort_by(|a, b| b.0.cmp(&a.0));
+        // Sort by combined score (descending)
+        scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
 
         scored.into_iter().map(|(_, item)| item.clone()).collect()
+    }
+
+    /// Sort items by frecency score (highest first), preserving order for unscored items
+    fn sort_by_frecency(&self, items: &[Item]) -> Vec<Item> {
+        let mut with_scores: Vec<(f64, usize, &Item)> = items
+            .iter()
+            .enumerate()
+            .map(|(idx, item)| (self.frecency_score(&item.id), idx, item))
+            .collect();
+
+        // Sort by frecency (desc), then by original index (stable sort for unscored)
+        with_scores.sort_by(|a, b| {
+            b.0.partial_cmp(&a.0)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.1.cmp(&b.1))
+        });
+
+        with_scores
+            .into_iter()
+            .map(|(_, _, item)| item.clone())
+            .collect()
+    }
+
+    /// Get frecency score for an item
+    fn frecency_score(&self, item_id: &str) -> f64 {
+        self.frecency
+            .as_ref()
+            .map(|f| f.score(item_id))
+            .unwrap_or(0.0)
     }
 }
 
