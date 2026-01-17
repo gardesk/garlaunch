@@ -1,0 +1,29 @@
+[package]
+name = "garlaunch"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "A rofi-like application launcher for the gar desktop suite"
+
+[[bin]]
+name = "garlaunch"
+path = "src/main.rs"
+
+[dependencies]
+gartk-core.workspace = true
+gartk-x11.workspace = true
+gartk-render.workspace = true
+x11rb = { version = "0.13", features = ["randr"] }
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+nucleo.workspace = true
+nucleo-matcher.workspace = true
+freedesktop_entry_parser.workspace = true
+dirs.workspace = true
+walkdir.workspace = true
