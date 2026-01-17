@@ -60,9 +60,9 @@ impl App {
                 .transparent(true),
         )?;
 
-        // Focus and grab keyboard
+        // Focus and grab keyboard (retry to handle WM keybinding race)
         window.focus()?;
-        window.grab_keyboard()?;
+        window.grab_keyboard_with_retry(10, 50)?; // 10 attempts, 50ms delay
 
         // Create popup UI
         let popup = Popup::new(window, prompt)?;
