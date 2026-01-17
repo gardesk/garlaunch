@@ -1,0 +1,42 @@
+[workspace]
+resolver = "2"
+members = ["garlaunch", "garlaunchctl"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+authors = ["mfwolffe"]
+
+[workspace.dependencies]
+# Internal crates
+gartk-core = { path = "../gartk/gartk-core" }
+gartk-x11 = { path = "../gartk/gartk-x11" }
+gartk-render = { path = "../gartk/gartk-render" }
+
+# CLI
+clap = { version = "4.5", features = ["derive"] }
+
+# Async
+tokio = { version = "1.0", features = ["full"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Error handling
+thiserror = "2.0"
+anyhow = "1.0"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Fuzzy matching
+nucleo = "0.5"
+nucleo-matcher = "0.3"
+
+# Desktop entries
+freedesktop_entry_parser = "1.3"
+dirs = "5.0"
+walkdir = "2.5"
