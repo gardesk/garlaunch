@@ -61,9 +61,8 @@ impl App {
                 .transparent(true),
         )?;
 
-        // Focus and grab keyboard (retry to handle WM keybinding race)
+        // Focus window (no keyboard grab - allows WM keybinds to work)
         window.focus()?;
-        window.grab_keyboard_with_retry(10, 50)?; // 10 attempts, 50ms delay
 
         // Create popup UI
         let popup = Popup::new(window, prompt)?;
@@ -137,9 +136,6 @@ impl App {
 
             Ok(!self.should_quit)
         })?;
-
-        // Ungrab keyboard before exiting
-        self.popup.window().ungrab_keyboard()?;
 
         Ok(())
     }
