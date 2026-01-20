@@ -33,6 +33,8 @@ pub struct App {
     result: Option<Action>,
     /// Whether the app should quit
     should_quit: bool,
+    /// Whether we have received focus (prevents early FocusOut quit)
+    has_focus: bool,
 }
 
 impl App {
@@ -103,6 +105,7 @@ impl App {
             matcher,
             result: None,
             should_quit: false,
+            has_focus: false,
         })
     }
 
@@ -126,9 +129,16 @@ impl App {
                 InputEvent::CloseRequested => {
                     self.should_quit = true;
                 }
+                InputEvent::FocusIn => {
+                    // Mark that we have focus - prevents premature FocusOut quit
+                    self.has_focus = true;
+                }
                 InputEvent::FocusOut => {
-                    // Close when focus is lost (click outside)
-                    self.should_quit = true;
+                    // Only close on FocusOut if we previously had focus
+                    // This prevents closing when opened over empty desktop
+                    if self.has_focus {
+                        self.should_quit = true;
+                    }
                 }
                 _ => {}
             }
