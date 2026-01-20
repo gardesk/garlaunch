@@ -27,6 +27,9 @@ impl DrunMode {
         dirs.push(PathBuf::from("/usr/share/applications"));
         dirs.push(PathBuf::from("/usr/local/share/applications"));
 
+        // NixOS applications
+        dirs.push(PathBuf::from("/run/current-system/sw/share/applications"));
+
         // Flatpak applications
         if let Some(data_home) = dirs::data_dir() {
             dirs.push(data_home.join("flatpak/exports/share/applications"));

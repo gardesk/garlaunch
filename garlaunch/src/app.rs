@@ -41,8 +41,8 @@ impl App {
         // Connect to X11
         let conn = Connection::connect(None)?;
 
-        // Detect primary monitor for centering
-        let monitor = gartk_x11::primary_monitor(&conn)?;
+        // Detect monitor under mouse pointer for centering
+        let monitor = gartk_x11::monitor_at_pointer(&conn)?;
 
         // Calculate popup size and position
         let width = 600;
@@ -124,6 +124,10 @@ impl App {
                     ev.request_redraw();
                 }
                 InputEvent::CloseRequested => {
+                    self.should_quit = true;
+                }
+                InputEvent::FocusOut => {
+                    // Close when focus is lost (click outside)
                     self.should_quit = true;
                 }
                 _ => {}
