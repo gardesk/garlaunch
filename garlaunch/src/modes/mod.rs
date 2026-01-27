@@ -75,10 +75,21 @@ impl Action {
         match self {
             Action::Launch(cmd) => {
                 tracing::info!("Launching: {}", cmd);
-                // Use shell to handle complex commands
-                Command::new("sh")
-                    .arg("-c")
-                    .arg(cmd)
+                // Use systemd-run to launch in a transient scope unit
+                // BindsTo ensures the app stops when graphical-session.target stops
+                // TimeoutStopSec gives apps time to save state before SIGKILL
+                Command::new("systemd-run")
+                    .args([
+                        "--user",
+                        "--scope",
+                        "--slice=app-garlaunch.slice",
+                        "--property=BindsTo=graphical-session.target",
+                        "--property=After=graphical-session.target",
+                        "--property=TimeoutStopSec=10",
+                        "sh",
+                        "-c",
+                        cmd,
+                    ])
                     .spawn()?;
                 Ok(())
             }
