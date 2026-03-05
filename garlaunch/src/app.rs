@@ -43,8 +43,8 @@ impl App {
         // Connect to X11
         let conn = Connection::connect(None)?;
 
-        // Detect monitor under mouse pointer for centering
-        let monitor = gartk_x11::monitor_at_pointer(&conn)?;
+        // Detect monitor of active window (falls back to pointer position)
+        let monitor = gartk_x11::monitor_of_active_window(&conn)?;
 
         // Calculate popup size and position
         let width = 600;
@@ -63,8 +63,9 @@ impl App {
                 .transparent(true),
         )?;
 
-        // Focus window (no keyboard grab - allows WM keybinds to work)
-        window.focus()?;
+        // Grab keyboard exclusively so we receive all input and don't lose focus.
+        // Retry needed because the WM may still hold a grab from the keybinding that launched us.
+        window.grab_keyboard_with_retry(5, 50)?;
 
         // Create popup UI
         let popup = Popup::new(window, prompt)?;
