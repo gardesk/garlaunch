@@ -65,7 +65,7 @@ impl App {
 
         // Grab keyboard exclusively so we receive all input and don't lose focus.
         // Retry needed because the WM may still hold a grab from the keybinding that launched us.
-        window.grab_keyboard_with_retry(5, 50)?;
+        window.grab_keyboard_with_retry(10, 50)?;
 
         // Create popup UI
         let popup = Popup::new(window, prompt)?;
