@@ -4,7 +4,7 @@ use crate::search::FuzzyMatcher;
 use crate::ui::Popup;
 use anyhow::Result;
 use gartk_core::{InputEvent, Key};
-use gartk_x11::{Connection, EventLoop, EventLoopConfig, Window, WindowConfig};
+use gartk_x11::{Connection, EventLoop, EventLoopConfig, Monitor, Window, WindowConfig};
 use std::path::PathBuf;
 
 /// Application state
@@ -33,8 +33,6 @@ pub struct App {
     result: Option<Action>,
     /// Whether the app should quit
     should_quit: bool,
-    /// Whether we have received focus (prevents early FocusOut quit)
-    has_focus: bool,
 }
 
 impl App {
@@ -43,8 +41,12 @@ impl App {
         // Connect to X11
         let conn = Connection::connect(None)?;
 
-        // Detect monitor of active window (falls back to pointer position)
-        let monitor = gartk_x11::monitor_of_active_window(&conn)?;
+        // Detect focused monitor: query gar WM via i3 IPC for the authoritative
+        // focused workspace, falling back to EWMH / pointer heuristics.
+        let monitor = focused_monitor_from_wm(&conn)
+            .unwrap_or_else(|| gartk_x11::monitor_of_active_window(&conn).unwrap_or_else(|_| {
+                gartk_x11::primary_monitor(&conn).expect("no monitors")
+            }));
 
         // Calculate popup size and position
         let width = 600;
@@ -63,8 +65,9 @@ impl App {
                 .transparent(true),
         )?;
 
-        // Grab keyboard exclusively so we receive all input and don't lose focus.
+        // Focus and grab keyboard exclusively so we receive all input.
         // Retry needed because the WM may still hold a grab from the keybinding that launched us.
+        window.focus()?;
         window.grab_keyboard_with_retry(10, 50)?;
 
         // Create popup UI
@@ -106,7 +109,6 @@ impl App {
             matcher,
             result: None,
             should_quit: false,
-            has_focus: false,
         })
     }
 
@@ -129,17 +131,6 @@ impl App {
                 }
                 InputEvent::CloseRequested => {
                     self.should_quit = true;
-                }
-                InputEvent::FocusIn => {
-                    // Mark that we have focus - prevents premature FocusOut quit
-                    self.has_focus = true;
-                }
-                InputEvent::FocusOut => {
-                    // Only close on FocusOut if we previously had focus
-                    // This prevents closing when opened over empty desktop
-                    if self.has_focus {
-                        self.should_quit = true;
-                    }
                 }
                 _ => {}
             }
@@ -326,4 +317,50 @@ impl App {
     pub fn take_result(&mut self) -> Option<Action> {
         self.result.take()
     }
+}
+
+/// Query gar's i3 IPC socket to find the focused workspace's monitor.
+/// Returns None if the socket isn't available or the query fails.
+fn focused_monitor_from_wm(conn: &Connection) -> Option<Monitor> {
+    use std::io::{Read, Write};
+    use std::os::unix::net::UnixStream;
+    use std::time::Duration;
+
+    let runtime_dir = std::env::var("XDG_RUNTIME_DIR").ok()?;
+    let socket_path = std::path::Path::new(&runtime_dir).join("gar-i3.sock");
+    if !socket_path.exists() {
+        return None;
+    }
+
+    let mut stream = UnixStream::connect(&socket_path).ok()?;
+    stream.set_read_timeout(Some(Duration::from_millis(500))).ok()?;
+    stream.set_write_timeout(Some(Duration::from_millis(500))).ok()?;
+
+    // i3 IPC: magic "i3-ipc" + length (u32 LE) + type (u32 LE)
+    // GET_WORKSPACES = type 1, empty payload
+    let mut request = Vec::with_capacity(14);
+    request.extend_from_slice(b"i3-ipc");
+    request.extend_from_slice(&0u32.to_le_bytes()); // payload length
+    request.extend_from_slice(&1u32.to_le_bytes()); // message type 1 = GET_WORKSPACES
+    stream.write_all(&request).ok()?;
+    stream.flush().ok()?;
+
+    // Read response header
+    let mut header = [0u8; 14];
+    stream.read_exact(&mut header).ok()?;
+    let payload_len = u32::from_le_bytes(header[6..10].try_into().ok()?) as usize;
+
+    // Read response payload
+    let mut payload = vec![0u8; payload_len];
+    stream.read_exact(&mut payload).ok()?;
+    let json: serde_json::Value = serde_json::from_slice(&payload).ok()?;
+
+    // Find the focused workspace and get its output (monitor name)
+    let workspaces = json.as_array()?;
+    let focused_ws = workspaces.iter().find(|ws| ws["focused"].as_bool() == Some(true))?;
+    let output_name = focused_ws["output"].as_str()?;
+
+    // Match against detected monitors
+    let monitors = gartk_x11::detect_monitors(conn).ok()?;
+    monitors.into_iter().find(|m| m.name == output_name)
 }
